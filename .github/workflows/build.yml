@@ -9,7 +9,7 @@ jobs:
     continue-on-error: true
     env:
       KERNEL_DEFCONFIG: "vendor/sm8150-perf_defconfig"
-      KERNEL_CMDLINE: "ARCH=arm64 SUBARCH=arm64 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1 LLVM_IAS=1 LD=ld.lld O=out"
+      KERNEL_CMDLINE: "ARCH=arm64 SUBARCH=arm64 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- O=out"
       DIR_WORKSPACE: "${{ github.workspace }}"
       DIR_ANYKERNEL3: "AnyKernel3"
       DIR_KERNEL: "kernel-source"
@@ -24,7 +24,7 @@ jobs:
       run: |
         sudo rm -rf /opt/ghc "/usr/local/share/boost" /usr/share/dotnet "$AGENT_TOOLSDIRECTORY" || true
         sudo apt-get update -y
-        sudo apt-get install -y libelf-dev libarchive-tools binutils build-essential mkbootimg device-tree-compiler openjdk-17-jdk-headless aria2 bison flex libssl-dev bc cpio pigz zip
+        sudo apt-get install -y libelf-dev libarchive-tools binutils build-essential mkbootimg device-tree-compiler openjdk-17-jdk-headless aria2 bison flex libssl-dev bc cpio pigz zip gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
     - name: "Clone AnyKernel3"
       run: |
         git clone https://github.com/ebears/AnyKernel3 -b oneplus7 --depth=1 $DIR_ANYKERNEL3
