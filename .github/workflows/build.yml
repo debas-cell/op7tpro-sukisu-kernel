@@ -103,6 +103,9 @@ jobs:
         scripts/config --file out/.config --enable TMPFS_XATTR
         # Relative module CRCs so ld.lld accepts them (ABS32 CRC relocations fail); keeps MODVERSIONS/vermagic intact for stock wlan/audio modules
         scripts/config --file out/.config --enable MODULE_REL_CRCS
+        # Disable PIE/KASLR: this 4.14.190 tree lacks full HAVE_ARCH_PREL32_RELOCATIONS, so CRC/ksymtab relocations fail under -pie. Non-reloc kernel boots fine; module ABI unaffected.
+        scripts/config --file out/.config --disable RELOCATABLE
+        scripts/config --file out/.config --disable RANDOMIZE_BASE
         export PATH="$DIR_WORKSPACE/toolchains/neutron-clang/bin:$PATH"
         make $KERNEL_CMDLINE olddefconfig
         echo "== REL_CRCS/MODVERSIONS =="; grep -iE "MODULE_REL_CRCS|CONFIG_MODVERSIONS" out/.config || true
