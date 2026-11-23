@@ -9,7 +9,7 @@ jobs:
     continue-on-error: true
     env:
       KERNEL_DEFCONFIG: "vendor/sm8150-perf_defconfig"
-      KERNEL_CMDLINE: "ARCH=arm64 SUBARCH=arm64 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- O=out"
+      KERNEL_CMDLINE: "ARCH=arm64 SUBARCH=arm64 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- LD=ld.lld O=out"
       DIR_WORKSPACE: "${{ github.workspace }}"
       DIR_ANYKERNEL3: "AnyKernel3"
       DIR_KERNEL: "kernel-source"
