@@ -77,6 +77,11 @@ jobs:
         name: patch-rejects
         path: rej_files/
         if-no-files-found: ignore
+    - name: "Strip -Werror tree-wide (modern Clang vs 2021 source)"
+      run: |
+        cd $DIR_WORKSPACE/$DIR_KERNEL
+        grep -rlZ -E -- '-Werror' --include=Makefile --include=Kbuild --include='*.mk' . 2>/dev/null | xargs -0 -r sed -i -E 's/-Werror(=[a-zA-Z0-9_-]+)?//g' || true
+        echo "stripped -Werror from Makefiles/Kbuild"
     - name: "Generate .config"
       run: |
         export PATH="$DIR_WORKSPACE/toolchains/neutron-clang/bin:$PATH"
