@@ -47,6 +47,10 @@ jobs:
         sed -i '/available but compiler is broken/ s/ && exit 1//' Makefile
         echo "== patched prepare-compiler-check =="
         grep -nE "not supported by compiler|available but compiler is broken" Makefile || true
+        # MODULE_REL_CRCS is an invisible symbol (no prompt/select) so olddefconfig/syncconfig forces it off.
+        # Make it default y under MODVERSIONS so relative CRCs are used (ld.lld needs them; keeps module compat).
+        sed -i '/^config MODULE_REL_CRCS$/{n;s/^\(\s*\)bool\s*$/\1bool\n\1default y/}' init/Kconfig
+        echo "== MODULE_REL_CRCS Kconfig =="; sed -n '/^config MODULE_REL_CRCS/,/^config /p' init/Kconfig | head -6
     - name: "Apply KernelSU non-GKI patches + SukiSU-Nova setup"
       run: |
         cd $DIR_WORKSPACE/$DIR_KERNEL
