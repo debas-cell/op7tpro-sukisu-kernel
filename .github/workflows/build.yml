@@ -40,7 +40,13 @@ jobs:
     - name: "Clone kernel source (LineageOS 18.1 / Android 11, 4.14.190, complete tree)"
       run: |
         git clone --depth=1 --branch lineage-18.1 https://github.com/LineageOS/android_kernel_oneplus_sm8150 $DIR_KERNEL
-        cd $DIR_KERNEL && git submodule update --init --recursive || true
+        cd $DIR_WORKSPACE/$DIR_KERNEL && git submodule update --init --recursive || true
+        # 4.14 + modern Clang: the Makefile's stack-protector/compiler check uses a -Werror cc-option test
+        # that spuriously fails with Neutron Clang (Clang supports the flag). Neutralize the fatal exits.
+        sed -i '/not supported by compiler/ s/ && exit 1//' Makefile
+        sed -i '/available but compiler is broken/ s/ && exit 1//' Makefile
+        echo "== patched prepare-compiler-check =="
+        grep -nE "not supported by compiler|available but compiler is broken" Makefile || true
     - name: "Apply KernelSU non-GKI patches + SukiSU-Nova setup"
       run: |
         cd $DIR_WORKSPACE/$DIR_KERNEL
@@ -94,6 +100,7 @@ jobs:
       run: |
         export PATH="$DIR_WORKSPACE/toolchains/neutron-clang/bin:$PATH"
         cd $DIR_WORKSPACE/$DIR_KERNEL
+        set -o pipefail
         make $KERNEL_CMDLINE CC="ccache clang" -j$(nproc --all) 2>&1 | tee $DIR_WORKSPACE/build.log
     - name: "Upload build log (always)"
       if: always()
