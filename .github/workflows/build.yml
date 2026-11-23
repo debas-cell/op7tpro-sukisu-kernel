@@ -97,8 +97,11 @@ jobs:
         scripts/config --file out/.config --enable KALLSYMS_ALL
         scripts/config --file out/.config --enable OVERLAY_FS
         scripts/config --file out/.config --enable TMPFS_XATTR
+        # Relative module CRCs so ld.lld accepts them (ABS32 CRC relocations fail); keeps MODVERSIONS/vermagic intact for stock wlan/audio modules
+        scripts/config --file out/.config --enable MODULE_REL_CRCS
         export PATH="$DIR_WORKSPACE/toolchains/neutron-clang/bin:$PATH"
         make $KERNEL_CMDLINE olddefconfig
+        echo "== REL_CRCS/MODVERSIONS =="; grep -iE "MODULE_REL_CRCS|CONFIG_MODVERSIONS" out/.config || true
         echo "== KSU-related config after olddefconfig =="
         grep -iE "CONFIG_KSU|CONFIG_KPM|KALLSYMS_ALL" out/.config || true
     - name: "Build kernel"
