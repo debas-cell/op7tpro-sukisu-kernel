@@ -1,0 +1,133 @@
+name: "Build OP7TPro SukiSU-Nova (OOS11 / SM8150 4.14.190)"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      KERNEL_DEFCONFIG: "defconfig"
+      KERNEL_CMDLINE: "ARCH=arm64 SUBARCH=arm64 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1 LLVM_IAS=1 LD=ld.lld O=out"
+      DIR_WORKSPACE: "${{ github.workspace }}"
+      DIR_ANYKERNEL3: "AnyKernel3"
+      DIR_KERNEL: "kernel-source"
+      DIR_BUILD: "out/arch/arm64/boot"
+      PATCH_BASE: "https://raw.githubusercontent.com/ebears/OnePlus-SM8150-Kernel-Builds/refs/heads/main/patches"
+    steps:
+    - name: "Ccache"
+      uses: hendrikmuhs/ccache-action@v1
+      with:
+        max-size: 2G
+    - name: "Install deps"
+      run: |
+        sudo rm -rf /opt/ghc "/usr/local/share/boost" /usr/share/dotnet "$AGENT_TOOLSDIRECTORY" || true
+        sudo apt-get update -y
+        sudo apt-get install -y libelf-dev libarchive-tools binutils build-essential mkbootimg device-tree-compiler openjdk-17-jdk-headless aria2 bison flex libssl-dev bc cpio pigz zip
+    - name: "Clone AnyKernel3"
+      run: |
+        git clone https://github.com/ebears/AnyKernel3 -b oneplus7 --depth=1 $DIR_ANYKERNEL3
+        rm -rf $DIR_ANYKERNEL3/.git
+    - name: "Set up Neutron Clang"
+      run: |
+        mkdir -p "$DIR_WORKSPACE/toolchains/neutron-clang"
+        cd "$DIR_WORKSPACE/toolchains/neutron-clang"
+        aria2c https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman
+        chmod +x antman
+        ./antman -S
+        ./antman -I
+    - name: "Clone kernel source (OOS11 R_10.0)"
+      run: |
+        git clone --depth=1 --branch oneplus/SM8150_R_10.0 https://github.com/OnePlusOSS/android_kernel_oneplus_sm8150 $DIR_KERNEL
+        cd $DIR_KERNEL && git submodule update --init --recursive || true
+    - name: "Apply KernelSU non-GKI patches + SukiSU-Nova setup"
+      run: |
+        cd $DIR_WORKSPACE/$DIR_KERNEL
+        echo "== 000_syscall_hooks =="
+        aria2c $PATCH_BASE/000_syscall_hooks.patch
+        patch -p1 < 000_syscall_hooks.patch || echo "WARN: syscall_hooks had rejects"
+        echo "== 002_path_umount =="
+        aria2c $PATCH_BASE/002_path_umount.patch
+        patch -p1 < 002_path_umount.patch || echo "WARN: path_umount had rejects"
+        echo "== 001_FIX_APATCH_OPENELA (try, likely N/A for OOS tree) =="
+        aria2c $PATCH_BASE/001_FIX_APATCH_OPENELA.patch || true
+        patch -p1 < 001_FIX_APATCH_OPENELA.patch || echo "WARN: FIX_APATCH skipped"
+        echo "== SukiSU-Nova setup.sh =="
+        curl -LSs "https://raw.githubusercontent.com/SukiSU-Nova/SukiSU-Nova/main/kernel/setup.sh" | bash -s || echo "WARN: setup.sh returned nonzero"
+        echo "== verify KSU integration =="
+        grep -q kernelsu drivers/Makefile && echo "KSU in drivers/Makefile OK" || echo "KSU NOT in drivers/Makefile"
+        ls -la drivers/kernelsu 2>/dev/null || echo "no drivers/kernelsu symlink"
+    - name: "Upload .rej (on failure or warn)"
+      if: always()
+      run: |
+        mkdir -p $DIR_WORKSPACE/rej_files
+        find $DIR_WORKSPACE/$DIR_KERNEL -name "*.rej" -exec cp {} $DIR_WORKSPACE/rej_files/ \; 2>/dev/null || true
+        echo "rej files:"; ls -la $DIR_WORKSPACE/rej_files/ || true
+    - name: "Upload patch rejects"
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: patch-rejects
+        path: rej_files/
+        if-no-files-found: ignore
+    - name: "Generate .config"
+      run: |
+        export PATH="$DIR_WORKSPACE/toolchains/neutron-clang/bin:$PATH"
+        cd $DIR_WORKSPACE/$DIR_KERNEL
+        make $KERNEL_CMDLINE CC="ccache clang" $KERNEL_DEFCONFIG
+    - name: "Enable KSU / KPM configs"
+      run: |
+        cd $DIR_WORKSPACE/$DIR_KERNEL
+        scripts/config --file out/.config --enable KSU
+        scripts/config --file out/.config --enable KSU_MANUAL_HOOK
+        scripts/config --file out/.config --enable KPM
+        scripts/config --file out/.config --enable KALLSYMS
+        scripts/config --file out/.config --enable KALLSYMS_ALL
+        scripts/config --file out/.config --enable OVERLAY_FS
+        scripts/config --file out/.config --enable TMPFS_XATTR
+        export PATH="$DIR_WORKSPACE/toolchains/neutron-clang/bin:$PATH"
+        make $KERNEL_CMDLINE olddefconfig
+        echo "== KSU-related config after olddefconfig =="
+        grep -iE "CONFIG_KSU|CONFIG_KPM|KALLSYMS_ALL" out/.config || true
+    - name: "Build kernel"
+      run: |
+        export PATH="$DIR_WORKSPACE/toolchains/neutron-clang/bin:$PATH"
+        cd $DIR_WORKSPACE/$DIR_KERNEL
+        make $KERNEL_CMDLINE CC="ccache clang" -j$(nproc --all) 2>&1 | tee $DIR_WORKSPACE/build.log
+    - name: "Upload build log (always)"
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-log
+        path: build.log
+        if-no-files-found: ignore
+    - name: "Copy image to AnyKernel3"
+      run: |
+        cd $DIR_WORKSPACE
+        if cp $DIR_KERNEL/$DIR_BUILD/Image.gz-dtb $DIR_ANYKERNEL3/; then echo "Image.gz-dtb"; \
+        elif cp $DIR_KERNEL/$DIR_BUILD/Image.gz $DIR_ANYKERNEL3/; then echo "Image.gz"; \
+        elif cp $DIR_KERNEL/$DIR_BUILD/Image $DIR_ANYKERNEL3/; then echo "Image"; \
+        else echo "NO IMAGE"; ls -la $DIR_KERNEL/$DIR_BUILD; exit 1; fi
+    - name: "KPM patch_linux (SukiSU)"
+      run: |
+        cd $DIR_WORKSPACE/$DIR_KERNEL/$DIR_BUILD
+        aria2c https://github.com/SukiSU-Ultra/SukiSU_patch/raw/refs/heads/main/kpm/patch_linux || true
+        if [ -f patch_linux ] && [ -f Image ]; then
+          chmod +x patch_linux; ./patch_linux Image || true
+          [ -f oImage ] && { rm -f Image; mv oImage Image; rm -f $DIR_WORKSPACE/$DIR_ANYKERNEL3/Image*; cp Image $DIR_WORKSPACE/$DIR_ANYKERNEL3/; echo "KPM patched"; } || echo "KPM patch skipped"
+        fi
+    - name: "Package AnyKernel3 zip"
+      run: |
+        cd $DIR_WORKSPACE
+        [ -f "$DIR_KERNEL/$DIR_BUILD/dtbo.img" ] && cp -fp $DIR_KERNEL/$DIR_BUILD/dtbo.img $DIR_ANYKERNEL3/ || true
+        [ -f "$DIR_KERNEL/$DIR_BUILD/dtb" ] && cp -fp $DIR_KERNEL/$DIR_BUILD/dtb $DIR_ANYKERNEL3/ || true
+        cd $DIR_ANYKERNEL3
+        zip -r9 ../OP7TPro-OOS11-SukiSU-Nova.zip *
+    - name: "Upload kernel zip"
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: OP7TPro-OOS11-SukiSU-Nova
+        path: "OP7TPro-OOS11-SukiSU-Nova.zip"
+        if-no-files-found: ignore
